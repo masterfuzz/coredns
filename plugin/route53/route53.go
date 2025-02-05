@@ -212,15 +212,36 @@ func maybeUnescape(s string) (string, error) {
 }
 
 func updateZoneFromRRS(rrs *route53.ResourceRecordSet, z *file.Zone) error {
-	for _, rr := range rrs.ResourceRecords {
-		n, err := maybeUnescape(aws.StringValue(rrs.Name))
+    n, err := maybeUnescape(aws.StringValue(rrs.Name))
+    if err != nil {
+        return fmt.Errorf("failed to unescape `%s' name: %v", aws.StringValue(rrs.Name), err)
+    }
+
+    if rrs.AliasTarget != nil {
+        if rrs.AliasTarget.DNSName != nil {
+        }
+        v, err := maybeUnescape(aws.StringValue(rrs.AliasTarget.DNSName))
+        if err != nil {
+            return fmt.Errorf("failed to unescape `%s' name: %v", aws.StringValue(rrs.Name), err)
+        }
+            
+		// Assemble RFC 1035 conforming record to pass into dns scanner.
+		rfc1035 := fmt.Sprintf("%s %d IN %s %s", n, aws.Int64Value(rrs.TTL), "CNAME", v)
+		r, err := dns.NewRR(rfc1035)
 		if err != nil {
-			return fmt.Errorf("failed to unescape `%s' name: %v", aws.StringValue(rrs.Name), err)
+			return fmt.Errorf("failed to parse resource record: %v", err)
 		}
+
+		z.Insert(r)
+        return nil
+    }
+
+	for _, rr := range rrs.ResourceRecords {
 		v, err := maybeUnescape(aws.StringValue(rr.Value))
 		if err != nil {
 			return fmt.Errorf("failed to unescape `%s' value: %v", aws.StringValue(rr.Value), err)
 		}
+
 
 		// Assemble RFC 1035 conforming record to pass into dns scanner.
 		rfc1035 := fmt.Sprintf("%s %d IN %s %s", n, aws.Int64Value(rrs.TTL), aws.StringValue(rrs.Type), v)
